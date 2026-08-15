@@ -156,6 +156,7 @@ class TeamStats(BaseModel):
     rush_epa: Optional[float] = None
     defensive_epa: Optional[float] = None
     recent_games: list[GameOut] = []
+    upcoming_games: list[GameOut] = []
 
 
 # ─── v2.0: Simulation ───────────────────────────────────────────────────────

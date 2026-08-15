@@ -350,6 +350,25 @@ async def get_team_stats(team_id: int):
     )
     recent_games = [_build_game_dict(r) for r in recent_rows]
 
+    # Upcoming games
+    upcoming_rows = await fetch(
+        GAMES_JOIN_SQL + """
+        WHERE (g.home_team_id = $1 OR g.away_team_id = $1) AND g.status IN ('pre', 'in_progress')
+        ORDER BY g.start_time ASC
+        """,
+        team_id,
+    )
+    upcoming_games = [_build_game_dict(r) for r in upcoming_rows]
+    
+    # Check for latest odds for upcoming games
+    for game in upcoming_games:
+        odds_row = await fetchrow(
+            "SELECT * FROM odds WHERE game_id = $1 ORDER BY captured_at DESC LIMIT 1",
+            game["id"],
+        )
+        if odds_row:
+            game["latest_odds"] = dict(odds_row)
+
     return {
         "team": dict(team_row),
         "record": record,
@@ -360,6 +379,7 @@ async def get_team_stats(team_id: int):
         "rush_epa": None,
         "defensive_epa": None,
         "recent_games": recent_games,
+        "upcoming_games": upcoming_games,
     }
 
 

@@ -124,6 +124,7 @@ export interface TeamStats {
   rush_epa: number | null;
   defensive_epa: number | null;
   recent_games: Game[];
+  upcoming_games: Game[];
 }
 
 /* ── API Functions ──────────────────────────────────────────────────────── */

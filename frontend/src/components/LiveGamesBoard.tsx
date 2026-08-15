@@ -21,7 +21,7 @@ function quarterLabel(q: number | null): string {
 
 /* ── Game Card Component ─────────────────────────────────────────────────── */
 
-function GameCard({ game }: { game: Game }) {
+export function GameCard({ game }: { game: Game }) {
   const isLive = game.status === "in_progress";
   const isPre = game.status === "pre";
   const startDate = game.start_time ? new Date(game.start_time) : null;
