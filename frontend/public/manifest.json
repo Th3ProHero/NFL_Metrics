@@ -1,0 +1,9 @@
+{
+  "name": "NFL BetMaster",
+  "short_name": "BetMaster",
+  "description": "Self-hosted NFL analytics, odds tracking, and bet management platform.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a1128",
+  "theme_color": "#3b82f6"
+}

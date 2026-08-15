@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NFL BetMaster v2.0 — Python Dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Async PostgreSQL driver
+asyncpg==0.30.0
+
+# HTTP client for ETL + remote NLP inference + Telegram
+httpx==0.28.1
+
+# SSE support
+sse-starlette==2.2.1
+
+# Data validation
+pydantic==2.10.4
+
+# Scheduler for background ETL cron jobs (v2.0: cron-based odds scheduling)
+apscheduler==3.10.4
+
+# NFL historical data
+nfl_data_py==0.3.9
+pandas==2.2.3
+
+# ─── v2.0: Monte Carlo CPU Vectorization ────────────────────────────────────
+# numpy: vectorized array operations for bulk random sampling and EPA math.
+# numba: JIT-compiles simulation loops to native machine code via LLVM.
+#   @njit(parallel=True) distributes prange iterations across CPU cores.
+#   NO CUDA/GPU dependency — this is purely CPU, works in any container.
+#   First call compiles (~1-2s), subsequent calls run at native C speed.
+numpy==2.2.1
+numba==0.61.0
+
+# ─── v2.0: Timezone support for APScheduler cron triggers ────────────────────
+pytz==2024.2

@@ -1,0 +1,120 @@
+###############################################################################
+# NFL BetMaster v2.0 — Docker Compose
+# Ports: Frontend 4000 | Backend 8000 | PostgreSQL 5440
+#
+# v2.0 Changes:
+#   • CPU-only Monte Carlo simulations (Numba @njit, no GPU needed)
+#   • Telegram + remote NLP inference env vars
+#   • Cloudflare Tunnel service for secure remote access
+###############################################################################
+
+version: "3.9"
+
+services:
+  # ─────────────────────────────────────────────────────────────────────────
+  # PostgreSQL 16
+  # ─────────────────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: nfl_db
+    restart: unless-stopped
+    ports:
+      - "5440:5432"                           # Host 5440 → Container 5432
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nfluser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nflpass}
+      POSTGRES_DB: ${POSTGRES_DB:-nflbetmaster}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nfluser}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # FastAPI Backend + ETL Workers + CPU Monte Carlo
+  # ─────────────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nfl_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"                           # Host 8000 → Container 8000
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nfluser}:${POSTGRES_PASSWORD:-nflpass}@db:5432/${POSTGRES_DB:-nflbetmaster}
+      ODDS_API_KEY: ${ODDS_API_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4000}
+      # v2.0: Telegram alerts
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # v2.0: Remote NLP inference server (e.g. Jetson on LAN)
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Next.js Frontend
+  # ─────────────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    container_name: nfl_frontend
+    restart: unless-stopped
+    ports:
+      - "4000:3000"                           # Host 4000 → Container 3000
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # v2.0: Cloudflare Tunnel — Secure remote access without opening ports
+  # ─────────────────────────────────────────────────────────────────────────
+  # Creates an encrypted tunnel from Cloudflare's edge to the frontend
+  # container (internal port 3000), giving you an HTTPS URL
+  # (e.g. nfl.yourdomain.com) without exposing any ports to the internet.
+  #
+  # Setup:
+  #   1. Install cloudflared: https://developers.cloudflare.com/cloudflare-one/
+  #   2. Run: cloudflared tunnel login
+  #   3. Run: cloudflared tunnel create nfl-betmaster
+  #   4. Set CLOUDFLARE_TUNNEL_TOKEN in .env
+  #   5. Configure DNS in Cloudflare dashboard
+  #
+  # To start with tunnel:
+  #   docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: nfl_tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - frontend
+    profiles:
+      - tunnel
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  default:
+    name: nfl_network

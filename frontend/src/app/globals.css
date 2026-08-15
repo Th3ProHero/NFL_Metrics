@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NFL BetMaster — Global Styles
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap');
+
+/* ─── Base Layer ─────────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    @apply border-white/10;
+  }
+
+  body {
+    @apply bg-surface-900 text-gray-100 font-sans antialiased;
+    background-image:
+      radial-gradient(ellipse at 20% 0%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(139, 92, 246, 0.06) 0%, transparent 50%);
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-surface-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-600 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-accent-blue/50;
+  }
+}
+
+/* ─── Component Layer ────────────────────────────────────────────────────── */
+
+@layer components {
+  /* Glass card */
+  .glass-card {
+    @apply bg-surface-800/60 backdrop-blur-xl border border-white/[0.06]
+           rounded-2xl shadow-lg transition-all duration-300;
+  }
+  .glass-card:hover {
+    @apply bg-surface-700/60 border-white/[0.1] shadow-glow-sm;
+  }
+
+  /* Live pulse indicator */
+  .live-dot {
+    @apply relative inline-flex h-2.5 w-2.5 rounded-full bg-nfl-win;
+  }
+  .live-dot::before {
+    content: '';
+    @apply absolute inset-0 rounded-full bg-nfl-win animate-ping opacity-75;
+  }
+
+  /* Stat badge */
+  .stat-badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+  .stat-badge-win {
+    @apply stat-badge bg-nfl-win/15 text-nfl-win;
+  }
+  .stat-badge-loss {
+    @apply stat-badge bg-nfl-loss/15 text-nfl-loss;
+  }
+  .stat-badge-pending {
+    @apply stat-badge bg-nfl-pending/15 text-nfl-pending;
+  }
+  .stat-badge-push {
+    @apply stat-badge bg-nfl-push/15 text-nfl-push;
+  }
+
+  /* Nav link */
+  .nav-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400
+           transition-all duration-200 hover:text-white hover:bg-surface-700/50;
+  }
+  .nav-link-active {
+    @apply text-white bg-accent-blue/10 border border-accent-blue/20 shadow-glow-sm;
+  }
+
+  /* Input field */
+  .input-field {
+    @apply w-full bg-surface-700/50 border border-white/10 rounded-xl
+           px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500
+           focus:outline-none focus:ring-2 focus:ring-accent-blue/40 focus:border-accent-blue/40
+           transition-all duration-200;
+  }
+
+  /* Button primary */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-2.5
+           bg-gradient-to-r from-accent-blue to-accent-purple
+           text-white font-semibold rounded-xl
+           hover:shadow-glow transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Button secondary */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           bg-surface-700/50 border border-white/10 text-gray-300
+           font-medium rounded-xl hover:bg-surface-600 hover:text-white
+           transition-all duration-200;
+  }
+
+  /* Score number animation */
+  .score-change {
+    animation: scorePop 0.3s ease-out;
+  }
+
+  /* Field position bar */
+  .field-bar {
+    @apply relative h-2 rounded-full bg-surface-600 overflow-hidden;
+  }
+  .field-bar-fill {
+    @apply absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-accent-blue to-accent-cyan
+           transition-all duration-700 ease-out;
+  }
+}
