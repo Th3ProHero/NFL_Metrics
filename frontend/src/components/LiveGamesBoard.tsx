@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { LIVE_GAMES_SSE_URL, type Game } from "@/lib/api";
+import { LIVE_GAMES_SSE_URL, type Game, simulateGame, type SimulationResult } from "@/lib/api";
 
 /* ── Helper: format American odds ────────────────────────────────────────── */
 
@@ -26,10 +26,60 @@ function GameCard({ game }: { game: Game }) {
   const isPre = game.status === "pre";
   const startDate = game.start_time ? new Date(game.start_time) : null;
 
+  const [expanded, setExpanded] = useState(false);
+  const [sim, setSim] = useState<SimulationResult | null>(null);
+  const [loadingSim, setLoadingSim] = useState(false);
+
+  const toggleExpand = async () => {
+    const newExpanded = !expanded;
+    setExpanded(newExpanded);
+    if (newExpanded && !sim) {
+      setLoadingSim(true);
+      try {
+        const res = await simulateGame(game.id);
+        setSim(res);
+      } catch (err) {
+        console.error("Failed to simulate game", err);
+      } finally {
+        setLoadingSim(false);
+      }
+    }
+  };
+
+  // Generate recommendation text
+  let recommendation = null;
+  let recType = "neutral";
+  if (sim) {
+    if (sim.ev_home?.is_positive_ev) {
+      recommendation = `🔥 ACCIÓN RECOMENDADA: Apostar a ${sim.home_team} (Moneyline). El modelo detecta una ventaja matemática del +${sim.ev_home.ev_percent.toFixed(1)}% sobre la cuota del casino.`;
+      recType = "positive";
+    } else if (sim.ev_away?.is_positive_ev) {
+      recommendation = `🔥 ACCIÓN RECOMENDADA: Apostar a ${sim.away_team} (Moneyline). El modelo detecta una ventaja matemática del +${sim.ev_away.ev_percent.toFixed(1)}% sobre la cuota del casino.`;
+      recType = "positive";
+    } else if (game.latest_odds?.over_under != null && sim.projected_total != null) {
+      const diff = sim.projected_total - game.latest_odds.over_under;
+      if (diff > 3.5) {
+        recommendation = `🔥 ACCIÓN RECOMENDADA: Apostar a Altas (Over ${game.latest_odds.over_under}). El modelo proyecta fuertemente ${sim.projected_total.toFixed(1)} puntos totales.`;
+        recType = "positive";
+      } else if (diff < -3.5) {
+        recommendation = `🔥 ACCIÓN RECOMENDADA: Apostar a Bajas (Under ${game.latest_odds.over_under}). El modelo proyecta fuertemente ${sim.projected_total.toFixed(1)} puntos totales.`;
+        recType = "positive";
+      } else {
+        recommendation = `✋ PASAR: Ningún equipo ofrece valor matemático claro. Las cuotas del casino están ajustadas a la probabilidad real.`;
+        recType = "neutral";
+      }
+    } else {
+      recommendation = `✋ PASAR: Ningún equipo ofrece valor matemático claro en este momento.`;
+      recType = "neutral";
+    }
+  }
+
   return (
     <div
-      className={`glass-card p-5 animate-fade-in relative overflow-hidden
-        ${isLive ? "ring-1 ring-accent-blue/30" : ""}`}
+      onClick={toggleExpand}
+      className={`glass-card p-5 animate-fade-in relative overflow-hidden cursor-pointer hover:bg-surface-700/40 transition-colors
+        ${isLive ? "ring-1 ring-accent-blue/30" : ""}
+        ${expanded ? "ring-1 ring-gray-500/30" : ""}`}
     >
       {/* Live glow accent */}
       {isLive && (
@@ -140,6 +190,58 @@ function GameCard({ game }: { game: Game }) {
               {fmtOdds(game.latest_odds.home_moneyline)}
             </p>
           </div>
+        </div>
+      )}
+      {/* ── Expanded Simulation Section ── */}
+      {expanded && (
+        <div className="mt-4 pt-4 border-t border-white/[0.06] animate-fade-in cursor-default" onClick={(e) => e.stopPropagation()}>
+          {loadingSim ? (
+            <div className="flex justify-center py-4">
+              <div className="w-5 h-5 border-2 border-accent-blue/30 border-t-accent-blue rounded-full animate-spin" />
+            </div>
+          ) : sim ? (
+            <div className="space-y-4">
+              {/* Win Probabilities */}
+              <div>
+                <div className="flex justify-between text-[11px] text-gray-400 mb-1 uppercase tracking-wider">
+                  <span>{sim.away_team} Win %</span>
+                  <span>{sim.home_team} Win %</span>
+                </div>
+                <div className="w-full h-2.5 bg-surface-800 rounded-full flex overflow-hidden">
+                  <div className="bg-accent-purple transition-all duration-1000" style={{ width: `${sim.away_win_prob * 100}%` }} />
+                  <div className="bg-accent-blue transition-all duration-1000" style={{ width: `${sim.home_win_prob * 100}%` }} />
+                </div>
+                <div className="flex justify-between text-xs font-bold text-white mt-1">
+                  <span>{(sim.away_win_prob * 100).toFixed(1)}%</span>
+                  <span>{(sim.home_win_prob * 100).toFixed(1)}%</span>
+                </div>
+              </div>
+
+              {/* Projections */}
+              <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                <div className="bg-surface-800/40 p-2.5 rounded-lg border border-white/[0.02]">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider">Proj. Total</p>
+                  <p className="font-bold text-gray-300 mt-0.5">{sim.projected_total.toFixed(1)} pts</p>
+                </div>
+                <div className="bg-surface-800/40 p-2.5 rounded-lg border border-white/[0.02]">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider">Fair Spread</p>
+                  <p className="font-bold text-gray-300 mt-0.5">
+                    {sim.projected_away_pts > sim.projected_home_pts
+                      ? `${sim.away_team} -${(sim.projected_away_pts - sim.projected_home_pts).toFixed(1)}`
+                      : `${sim.home_team} -${(sim.projected_home_pts - sim.projected_away_pts).toFixed(1)}`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Recommendation Block */}
+              <div className={`p-3.5 rounded-lg border text-xs leading-relaxed
+                ${recType === "neutral" ? "bg-surface-800/60 border-surface-600 text-gray-400" : "bg-nfl-win/10 border-nfl-win/30 text-nfl-win shadow-[0_0_15px_rgba(34,197,94,0.1)]"}`}>
+                {recommendation}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-center text-nfl-loss">Failed to load simulation.</p>
+          )}
         </div>
       )}
     </div>

@@ -171,3 +171,24 @@ export const deleteBet = (id: number) =>
 
 // SSE URL (used by components directly)
 export const LIVE_GAMES_SSE_URL = `${API_BASE}/api/live-games`;
+
+export interface SimulationResult {
+  game_id: number;
+  home_team: string;
+  away_team: string;
+  home_win_prob: number;
+  away_win_prob: number;
+  fair_home_ml: number;
+  fair_away_ml: number;
+  projected_home_pts: number;
+  projected_away_pts: number;
+  projected_total: number;
+  n_simulations: number;
+  engine: string;
+  elapsed_ms: number;
+  ev_home?: { is_positive_ev: boolean; ev_percent: number; edge_percent: number } | null;
+  ev_away?: { is_positive_ev: boolean; ev_percent: number; edge_percent: number } | null;
+}
+
+export const simulateGame = (gameId: number) =>
+  apiFetch<SimulationResult>(`/api/simulate/${gameId}`, { method: "POST" });
