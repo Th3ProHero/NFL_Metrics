@@ -22,7 +22,7 @@ pydantic==2.10.4
 apscheduler==3.10.4
 
 # NFL historical data
-nfl_data_py==0.3.9
+nfl_data_py==0.3.3
 pandas==2.2.3
 
 # ─── v2.0: Monte Carlo CPU Vectorization ────────────────────────────────────
