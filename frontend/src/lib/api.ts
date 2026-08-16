@@ -173,6 +173,10 @@ export const deleteBet = (id: number) =>
 // SSE URL (used by components directly)
 export const LIVE_GAMES_SSE_URL = `${API_BASE}/api/live-games`;
 
+// Manual data refresh
+export const triggerRefresh = () =>
+  apiFetch<{ status: string; has_live_games: boolean; timestamp: string }>("/api/refresh", { method: "POST" });
+
 export interface SimulationResult {
   game_id: number;
   home_team: string;

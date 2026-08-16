@@ -129,6 +129,29 @@ async def health_check():
         return {"status": "unhealthy", "error": str(exc)}
 
 
+# ─── Manual Refresh ──────────────────────────────────────────────────────────
+
+@app.post("/api/refresh", tags=["System"])
+async def manual_refresh():
+    """
+    Manually trigger an ESPN scoreboard sync.
+
+    Forces the ETL to re-fetch all game data from ESPN immediately,
+    without waiting for the next scheduled poll cycle.
+    """
+    from app.etl_live import poll_espn_scoreboard
+    try:
+        has_live = await poll_espn_scoreboard()
+        return {
+            "status": "ok",
+            "has_live_games": has_live,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as exc:
+        logger.exception("Manual refresh failed")
+        raise HTTPException(status_code=500, detail=f"Refresh failed: {exc}")
+
+
 # =============================================================================
 #  TEAMS
 # =============================================================================

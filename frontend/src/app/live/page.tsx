@@ -1,20 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import LiveGamesBoard from "@/components/LiveGamesBoard";
 import { GameCard } from "@/components/LiveGamesBoard";
-import { fetchGames, type Game } from "@/lib/api";
+import { fetchGames, triggerRefresh, type Game } from "@/lib/api";
 
 export default function LivePage() {
   const [upcomingGames, setUpcomingGames] = useState<Game[]>([]);
   const [completedGames, setCompletedGames] = useState<Game[]>([]);
   const [loadingUpcoming, setLoadingUpcoming] = useState(true);
   const [loadingCompleted, setLoadingCompleted] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  useEffect(() => {
+  const loadGames = useCallback(() => {
+    setLoadingUpcoming(true);
+    setLoadingCompleted(true);
+
     fetchGames({ status: "pre", limit: "30" })
       .then((games) => {
-        // Sort by start_time ascending (soonest first)
         games.sort((a, b) => {
           const ta = a.start_time ? new Date(a.start_time).getTime() : Infinity;
           const tb = b.start_time ? new Date(b.start_time).getTime() : Infinity;
@@ -31,16 +35,70 @@ export default function LivePage() {
       .finally(() => setLoadingCompleted(false));
   }, []);
 
+  useEffect(() => {
+    loadGames();
+  }, [loadGames]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await triggerRefresh();
+      setLastRefresh(new Date());
+      // Reload games after ESPN sync completes
+      loadGames();
+    } catch (err) {
+      console.error("Refresh failed:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div>
-      {/* ── Page Header ── */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-display font-bold text-white tracking-tight">
-          Live Scoreboard
-        </h1>
-        <p className="text-sm text-gray-400 mt-1">
-          Real-time scores, odds, and field position updates via SSE
-        </p>
+      {/* ── Page Header with Refresh Button ── */}
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-display font-bold text-white tracking-tight">
+            Live Scoreboard
+          </h1>
+          <p className="text-sm text-gray-400 mt-1">
+            Real-time scores, odds, and field position updates via SSE
+          </p>
+        </div>
+
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className={`
+              group inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold
+              transition-all duration-300 border
+              ${refreshing
+                ? "bg-accent-blue/10 border-accent-blue/20 text-accent-blue/60 cursor-wait"
+                : "bg-accent-blue/10 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/20 hover:border-accent-blue/50 hover:shadow-lg hover:shadow-accent-blue/10 active:scale-95"
+              }
+            `}
+          >
+            <svg
+              className={`w-4 h-4 transition-transform ${refreshing ? "animate-spin" : "group-hover:rotate-180 duration-500"}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21.5 2v6h-6M2.5 22v-6h6" />
+              <path d="M2.5 11.5a10 10 0 0 1 18.36-4.5M21.5 12.5a10 10 0 0 1-18.36 4.5" />
+            </svg>
+            {refreshing ? "Syncing ESPN..." : "Sync Data"}
+          </button>
+          {lastRefresh && (
+            <span className="text-[10px] text-gray-600 tabular-nums">
+              Last sync: {lastRefresh.toLocaleTimeString()}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* ── Live Board ── */}
