@@ -30,6 +30,7 @@ from app.models import (
     GameOut, OddsOut, TeamOut, TeamStats,
     SimulationRequest, SimulationResult,
     InjuryReport, InjuryAnalysisResult,
+    PlayerOut, PositionGroup, TeamRoster,
 )
 from app.etl_live import etl_loop
 from app.etl_odds import start_odds_scheduler, stop_odds_scheduler
@@ -381,6 +382,144 @@ async def get_team_stats(team_id: int):
         "recent_games": recent_games,
         "upcoming_games": upcoming_games,
     }
+
+
+# =============================================================================
+#  ROSTER (ESPN live-fetch with in-memory cache)
+# =============================================================================
+
+import time as _time
+import httpx as _httpx
+
+# Simple in-memory cache: { espn_id: (timestamp, data) }
+_roster_cache: dict[str, tuple[float, dict]] = {}
+_ROSTER_CACHE_TTL = 3600  # 1 hour
+
+# Position sort priority — key positions first
+_POS_PRIORITY = {
+    "QB": 0, "RB": 1, "FB": 2, "WR": 3, "TE": 4,
+    "OT": 5, "OG": 5, "G": 5, "OL": 5, "C": 6, "T": 5,
+    "DE": 10, "DT": 11, "NT": 12, "DL": 12,
+    "OLB": 13, "ILB": 14, "MLB": 14, "LB": 13,
+    "CB": 15, "S": 16, "FS": 16, "SS": 16, "DB": 17,
+    "K": 20, "P": 21, "LS": 22,
+}
+
+
+def _parse_espn_roster(data: dict, team_id: int, team_name: str) -> dict:
+    """Parse ESPN roster JSON into our TeamRoster structure."""
+    groups = []
+    total = 0
+    season_year = data.get("season", {}).get("year")
+
+    for group in data.get("athletes", []):
+        group_name = group.get("position", "Unknown").title()
+        # ESPN uses lowercase: "offense", "defense", "specialTeams"
+        if group_name == "Specialteams":
+            group_name = "Special Teams"
+
+        players = []
+        for athlete in group.get("items", []):
+            pos_data = athlete.get("position", {})
+            headshot = athlete.get("headshot", {})
+            college_data = athlete.get("college", {})
+            experience = athlete.get("experience", {})
+            status_data = athlete.get("status", {})
+
+            # Parse injuries
+            injury_list = []
+            for inj in athlete.get("injuries", []):
+                desc = inj.get("type", {}).get("description", "")
+                detail = inj.get("details", {}).get("detail", "")
+                injury_str = f"{desc}: {detail}" if detail else desc
+                if injury_str:
+                    injury_list.append(injury_str)
+
+            player = {
+                "espn_id": str(athlete.get("id", "")),
+                "full_name": athlete.get("fullName", athlete.get("displayName", "")),
+                "jersey": athlete.get("jersey"),
+                "position": pos_data.get("abbreviation", ""),
+                "position_name": pos_data.get("displayName", pos_data.get("name", "")),
+                "headshot_url": headshot.get("href") if headshot else None,
+                "height": athlete.get("displayHeight"),
+                "weight": athlete.get("displayWeight"),
+                "age": athlete.get("age"),
+                "experience_years": experience.get("years", 0),
+                "college": college_data.get("shortName", college_data.get("name")) if college_data else None,
+                "status": status_data.get("name", "Active"),
+                "injuries": injury_list,
+            }
+            players.append(player)
+
+        # Sort players: by position priority, then by jersey number
+        players.sort(key=lambda p: (
+            _POS_PRIORITY.get(p["position"], 50),
+            int(p["jersey"]) if p.get("jersey") and p["jersey"].isdigit() else 999,
+        ))
+
+        total += len(players)
+        groups.append({
+            "name": group_name,
+            "players": players,
+            "count": len(players),
+        })
+
+    return {
+        "team_id": team_id,
+        "team_name": team_name,
+        "season": season_year,
+        "groups": groups,
+        "total_players": total,
+    }
+
+
+@app.get("/api/teams/{team_id}/roster", response_model=TeamRoster, tags=["Teams"])
+async def get_team_roster(team_id: int):
+    """
+    Get the current roster for a team, fetched live from ESPN.
+
+    Results are cached in memory for 1 hour to avoid excessive API calls.
+    Players are grouped by position category (Offense, Defense, Special Teams)
+    and sorted by position priority within each group.
+    """
+    # Look up the team's ESPN ID
+    team_row = await fetchrow("SELECT * FROM teams WHERE id = $1", team_id)
+    if not team_row:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    espn_id = team_row["espn_id"]
+    team_name = team_row["name"]
+
+    # Check cache
+    now = _time.time()
+    if espn_id in _roster_cache:
+        cached_at, cached_data = _roster_cache[espn_id]
+        if now - cached_at < _ROSTER_CACHE_TTL:
+            logger.debug("Roster cache hit for %s (team %d)", espn_id, team_id)
+            return cached_data
+
+    # Fetch from ESPN
+    espn_url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{espn_id}/roster"
+    try:
+        async with _httpx.AsyncClient(timeout=_httpx.Timeout(15.0)) as client:
+            resp = await client.get(espn_url)
+            resp.raise_for_status()
+            raw = resp.json()
+    except Exception as exc:
+        logger.error("Failed to fetch roster for team %d (ESPN %s): %s", team_id, espn_id, exc)
+        # Return cached data if available (even if stale)
+        if espn_id in _roster_cache:
+            logger.warning("Returning stale cache for team %d", team_id)
+            return _roster_cache[espn_id][1]
+        raise HTTPException(status_code=502, detail=f"ESPN API error: {exc}")
+
+    # Parse and cache
+    roster_data = _parse_espn_roster(raw, team_id, team_name)
+    _roster_cache[espn_id] = (now, roster_data)
+    logger.info("Fetched roster for %s: %d players", team_name, roster_data["total_players"])
+
+    return roster_data
 
 
 # =============================================================================

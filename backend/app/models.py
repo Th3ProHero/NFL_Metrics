@@ -206,3 +206,35 @@ class InjuryAnalysisResult(BaseModel):
     risk_factors: list[str] = []
     model_used: str
     raw_response: Optional[str] = None
+
+
+# ─── Roster ──────────────────────────────────────────────────────────────────
+
+class PlayerOut(BaseModel):
+    espn_id: str
+    full_name: str
+    jersey: Optional[str] = None
+    position: str              # e.g. "QB", "WR", "CB"
+    position_name: str         # e.g. "Quarterback", "Wide Receiver"
+    headshot_url: Optional[str] = None
+    height: Optional[str] = None    # e.g. "6' 3\""
+    weight: Optional[str] = None    # e.g. "230 lbs"
+    age: Optional[int] = None
+    experience_years: int = 0
+    college: Optional[str] = None
+    status: str = "Active"          # Active, Injured Reserve, Practice Squad, etc.
+    injuries: list[str] = []        # Current injury descriptions
+
+
+class PositionGroup(BaseModel):
+    name: str                       # "Offense", "Defense", "Special Teams"
+    players: list[PlayerOut] = []
+    count: int = 0
+
+
+class TeamRoster(BaseModel):
+    team_id: int
+    team_name: str
+    season: Optional[int] = None
+    groups: list[PositionGroup] = []
+    total_players: int = 0

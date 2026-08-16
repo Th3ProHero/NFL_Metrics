@@ -193,3 +193,39 @@ export interface SimulationResult {
 
 export const simulateGame = (gameId: number) =>
   apiFetch<SimulationResult>(`/api/simulate/${gameId}`, { method: "POST" });
+
+/* ── Roster Types ──────────────────────────────────────────────────────────── */
+
+export interface Player {
+  espn_id: string;
+  full_name: string;
+  jersey: string | null;
+  position: string;
+  position_name: string;
+  headshot_url: string | null;
+  height: string | null;
+  weight: string | null;
+  age: number | null;
+  experience_years: number;
+  college: string | null;
+  status: string;
+  injuries: string[];
+}
+
+export interface PositionGroup {
+  name: string;
+  players: Player[];
+  count: number;
+}
+
+export interface TeamRoster {
+  team_id: number;
+  team_name: string;
+  season: number | null;
+  groups: PositionGroup[];
+  total_players: number;
+}
+
+// Roster
+export const fetchTeamRoster = (teamId: number) =>
+  apiFetch<TeamRoster>(`/api/teams/${teamId}/roster`);
