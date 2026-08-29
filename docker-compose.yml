@@ -54,6 +54,8 @@ services:
       # v2.0: Remote NLP inference server (e.g. Jetson on LAN)
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
+    volumes:
+      - pool_uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -113,6 +115,8 @@ services:
 
 volumes:
   pgdata:
+    driver: local
+  pool_uploads:
     driver: local
 
 networks:

@@ -342,3 +342,20 @@ export const resolvePoolPicks = () =>
   apiFetch<{ detail: string; resolved_count: number }>("/api/pool/resolve", {
     method: "POST",
   });
+
+// Upload avatar file
+export const uploadAvatar = async (file: File): Promise<{ url: string; filename: string }> => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API_BASE}/api/pool/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Upload failed: ${err}`);
+  }
+  return res.json();
+};
+

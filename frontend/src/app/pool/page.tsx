@@ -12,6 +12,7 @@ import {
   createPoolPicks,
   fetchPoolPicks,
   resolvePoolPicks,
+  uploadAvatar,
   type PoolPlayer,
   type PoolPlayerCreate,
   type LeaderboardEntry,
@@ -571,6 +572,9 @@ function PlayersTab() {
     fav_team_2: null,
     fav_team_3: null,
   });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [useUrl, setUseUrl] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -594,24 +598,37 @@ function PlayersTab() {
     if (!formData.name.trim()) return;
     setSaving(true);
     try {
+      let finalAvatarUrl = formData.avatar_url;
+
+      // If user chose a file from their gallery/device, upload it first
+      if (avatarFile) {
+        const uploadRes = await uploadAvatar(avatarFile);
+        finalAvatarUrl = uploadRes.url;
+      }
+
       const data = {
         ...formData,
         fav_team_1: formData.fav_team_1 || null,
         fav_team_2: formData.fav_team_2 || null,
         fav_team_3: formData.fav_team_3 || null,
-        avatar_url: formData.avatar_url || null,
+        avatar_url: finalAvatarUrl || null,
       };
+
       if (editingPlayer) {
         await updatePoolPlayer(editingPlayer.id, data);
       } else {
         await createPoolPlayer(data);
       }
+
       setShowForm(false);
       setEditingPlayer(null);
+      setAvatarFile(null);
+      setAvatarPreview(null);
       setFormData({ name: "", avatar_url: "", fav_team_1: null, fav_team_2: null, fav_team_3: null });
       await loadData();
     } catch (err) {
       console.error(err);
+      alert("Error al guardar: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSaving(false);
     }
@@ -619,6 +636,9 @@ function PlayersTab() {
 
   const handleEdit = (player: PoolPlayer) => {
     setEditingPlayer(player);
+    setAvatarFile(null);
+    setAvatarPreview(player.avatar_url || null);
+    setUseUrl(false);
     setFormData({
       name: player.name,
       avatar_url: player.avatar_url || "",
@@ -684,21 +704,100 @@ function PlayersTab() {
               />
             </div>
 
-            {/* Avatar URL */}
+            {/* Avatar upload / selector */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1 uppercase tracking-wider">
-                Foto (URL) — opcional
+              <label className="block text-xs text-gray-400 mb-2 uppercase tracking-wider">
+                Foto de Perfil (Galería o Archivo)
               </label>
-              <input
-                type="url"
-                className="input-field"
-                placeholder="https://ejemplo.com/foto.jpg"
-                value={formData.avatar_url || ""}
-                onChange={(e) => setFormData({ ...formData, avatar_url: e.target.value })}
-              />
-              <p className="text-[11px] text-gray-500 mt-1">
-                Deja vacío para usar un avatar generado automáticamente
-              </p>
+
+              {!useUrl ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4 bg-surface-700/30 p-3 rounded-2xl border border-white/5">
+                    {/* Preview circle */}
+                    <div className="relative group">
+                      {avatarPreview ? (
+                        <img
+                          src={avatarPreview}
+                          alt="Preview"
+                          className="w-16 h-16 rounded-full object-cover ring-2 ring-accent-blue/50"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-surface-700/70 border border-white/10 flex items-center justify-center text-2xl text-gray-400">
+                          📷
+                        </div>
+                      )}
+                      {avatarPreview && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAvatarFile(null);
+                            setAvatarPreview(null);
+                            setFormData((prev) => ({ ...prev, avatar_url: "" }));
+                          }}
+                          className="absolute -top-1 -right-1 bg-nfl-loss text-white rounded-full w-5 h-5 text-xs flex items-center justify-center hover:scale-110 transition-transform shadow-md"
+                          title="Eliminar foto"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    {/* File input button */}
+                    <div className="flex-1">
+                      <label className="btn-secondary cursor-pointer w-full text-center text-xs py-2.5 flex items-center justify-center gap-2 hover:border-accent-blue/40 hover:text-white transition-all">
+                        <span>🖼️</span>
+                        <span>{avatarPreview ? "Cambiar foto de galería" : "Seleccionar de galería / archivos"}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setAvatarFile(file);
+                              setAvatarPreview(URL.createObjectURL(file));
+                            }
+                          }}
+                        />
+                      </label>
+                      <p className="text-[11px] text-gray-500 mt-1.5">
+                        Fotos de tu teléfono o computadora (JPG, PNG, WEBP)
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setUseUrl(true)}
+                    className="text-[11px] text-accent-blue/80 hover:text-accent-blue hover:underline"
+                  >
+                    ¿Prefieres ingresar una URL externa de imagen? Haz clic aquí
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="url"
+                    className="input-field"
+                    placeholder="https://ejemplo.com/foto.jpg"
+                    value={formData.avatar_url || ""}
+                    onChange={(e) => {
+                      setFormData({ ...formData, avatar_url: e.target.value });
+                      setAvatarPreview(e.target.value);
+                    }}
+                  />
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-gray-500">Deja vacío para avatar automático</span>
+                    <button
+                      type="button"
+                      onClick={() => setUseUrl(false)}
+                      className="text-accent-blue hover:underline"
+                    >
+                      ← Subir foto desde archivos
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Favorite teams */}

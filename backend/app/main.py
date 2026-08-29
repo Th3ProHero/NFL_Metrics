@@ -18,8 +18,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncGenerator, Optional
 
-import numpy as np
-from fastapi import FastAPI, HTTPException, Query
+import uuid
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -103,6 +105,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─── Uploads directory & static files ────────────────────────────────────────
+
+UPLOAD_DIR = Path("/app/uploads") if os.path.exists("/app") else Path(__file__).resolve().parent.parent / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
 
 
 # ─── Health Check ────────────────────────────────────────────────────────────
@@ -865,6 +874,44 @@ def _build_pool_player(row) -> dict:
 
 
 # ─── Pool Players CRUD ──────────────────────────────────────────────────────
+
+ALLOWED_AVATAR_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+MAX_AVATAR_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+@app.post("/api/pool/upload", tags=["Friends Pool"])
+async def upload_pool_avatar(file: UploadFile = File(...)):
+    """Upload an avatar image from user's gallery or files."""
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_AVATAR_EXTS:
+        if file.content_type == "image/jpeg":
+            ext = ".jpg"
+        elif file.content_type == "image/png":
+            ext = ".png"
+        elif file.content_type == "image/webp":
+            ext = ".webp"
+        elif file.content_type == "image/gif":
+            ext = ".gif"
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Formato no soportado. Usa JPG, PNG, WEBP o GIF.",
+            )
+
+    content = await file.read()
+    if len(content) > MAX_AVATAR_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail="La imagen supera el límite de 10 MB.",
+        )
+
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest_path = UPLOAD_DIR / filename
+    with open(dest_path, "wb") as f:
+        f.write(content)
+
+    return {"url": f"/api/uploads/{filename}", "filename": filename}
+
 
 @app.get("/api/pool/players", response_model=list[PoolPlayerOut], tags=["Friends Pool"])
 async def list_pool_players():
