@@ -19,11 +19,66 @@ function quarterLabel(q: number | null): string {
   return "OT";
 }
 
+/* ── Helper: date and relative time ago ──────────────────────────────────── */
+
+function formatDateAndTimeAgo(dateStr: string | null | undefined): { fullDate: string; timeAgo: string } | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+
+  const fullDate = d.toLocaleDateString("es-MX", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHours = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+  const diffYears = Math.floor(diffDays / 365);
+
+  let timeAgo = "";
+  if (diffMs < 0) {
+    const absHours = Math.abs(diffHours);
+    const absDays = Math.abs(diffDays);
+    if (absHours < 24) {
+      timeAgo = `en ${absHours}h`;
+    } else {
+      timeAgo = `en ${absDays}d`;
+    }
+  } else if (diffMin < 2) {
+    timeAgo = "hace un momento";
+  } else if (diffMin < 60) {
+    timeAgo = `hace ${diffMin} min`;
+  } else if (diffHours < 24) {
+    timeAgo = `hace ${diffHours} ${diffHours === 1 ? "hora" : "horas"}`;
+  } else if (diffDays < 7) {
+    timeAgo = `hace ${diffDays} ${diffDays === 1 ? "día" : "días"}`;
+  } else if (diffWeeks < 5) {
+    timeAgo = `hace ${diffWeeks} ${diffWeeks === 1 ? "sem" : "semanas"}`;
+  } else if (diffMonths < 12) {
+    timeAgo = `hace ${diffMonths} ${diffMonths === 1 ? "mes" : "meses"}`;
+  } else {
+    timeAgo = `hace ${diffYears} ${diffYears === 1 ? "año" : "años"}`;
+  }
+
+  return { fullDate, timeAgo };
+}
+
 /* ── Game Card Component ─────────────────────────────────────────────────── */
 
 export function GameCard({ game }: { game: Game }) {
   const isLive = game.status === "in_progress";
   const isPre = game.status === "pre";
+  const dateInfo = formatDateAndTimeAgo(game.start_time);
   const startDate = game.start_time ? new Date(game.start_time) : null;
 
   const [expanded, setExpanded] = useState(false);
@@ -88,11 +143,11 @@ export function GameCard({ game }: { game: Game }) {
       )}
 
       {/* ── Header: Status / Quarter / Clock ── */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           {isLive && <span className="live-dot" />}
           <span className={`text-xs font-semibold uppercase tracking-wider
-            ${isLive ? "text-nfl-win" : isPre ? "text-nfl-pending" : "text-gray-500"}`}>
+            ${isLive ? "text-nfl-win" : isPre ? "text-nfl-pending" : "text-gray-400"}`}>
             {isLive
               ? `${quarterLabel(game.quarter)} ${game.clock || ""}`
               : isPre
@@ -106,6 +161,14 @@ export function GameCard({ game }: { game: Game }) {
           </span>
         )}
       </div>
+
+      {/* Date and time ago banner */}
+      {dateInfo && (
+        <div className="flex items-center justify-between text-[11px] mb-3 px-2 py-1 rounded bg-white/[0.02] border border-white/[0.04] text-gray-400">
+          <span className="truncate">🗓️ {dateInfo.fullDate}</span>
+          <span className="text-[10px] text-gray-500 shrink-0">⏱️ {dateInfo.timeAgo}</span>
+        </div>
+      )}
 
       {/* ── Teams & Scores ── */}
       <div className="space-y-3">

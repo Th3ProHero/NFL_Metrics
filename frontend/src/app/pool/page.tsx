@@ -221,8 +221,65 @@ function LeaderboardTab() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   DATE & TIME AGO HELPER
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function formatDateAndTimeAgo(dateStr: string | null | undefined): { fullDate: string; timeAgo: string } | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+
+  const fullDate = d.toLocaleDateString("es-MX", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHours = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+  const diffYears = Math.floor(diffDays / 365);
+
+  let timeAgo = "";
+  if (diffMs < 0) {
+    const absHours = Math.abs(diffHours);
+    const absDays = Math.abs(diffDays);
+    if (absHours < 24) {
+      timeAgo = `en ${absHours}h`;
+    } else {
+      timeAgo = `en ${absDays}d`;
+    }
+  } else if (diffMin < 2) {
+    timeAgo = "hace un momento";
+  } else if (diffMin < 60) {
+    timeAgo = `hace ${diffMin} min`;
+  } else if (diffHours < 24) {
+    timeAgo = `hace ${diffHours} ${diffHours === 1 ? "hora" : "horas"}`;
+  } else if (diffDays < 7) {
+    timeAgo = `hace ${diffDays} ${diffDays === 1 ? "día" : "días"}`;
+  } else if (diffWeeks < 5) {
+    timeAgo = `hace ${diffWeeks} ${diffWeeks === 1 ? "sem" : "semanas"}`;
+  } else if (diffMonths < 12) {
+    timeAgo = `hace ${diffMonths} ${diffMonths === 1 ? "mes" : "meses"}`;
+  } else {
+    timeAgo = `hace ${diffYears} ${diffYears === 1 ? "año" : "años"}`;
+  }
+
+  return { fullDate, timeAgo };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    PICKS TAB
    ═══════════════════════════════════════════════════════════════════════════ */
+
 
 function PicksTab() {
   const [players, setPlayers] = useState<PoolPlayer[]>([]);
@@ -423,6 +480,7 @@ function PicksTab() {
             const existingPick = existingPicks.find((p) => p.game_id === game.id);
             const isResolved = existingPick?.is_correct !== null && existingPick?.is_correct !== undefined;
             const isFinished = game.status === "post";
+            const dateInfo = formatDateAndTimeAgo(game.start_time);
 
             return (
               <div
@@ -437,31 +495,48 @@ function PicksTab() {
               >
                 {/* Editable disclaimer for finished games */}
                 {isFinished && (
-                  <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-nfl-pending/5 border border-nfl-pending/20">
+                  <div className="flex items-center gap-2 mb-2.5 px-3 py-1.5 rounded-lg bg-nfl-pending/5 border border-nfl-pending/20">
                     <span className="text-nfl-pending text-xs">⚠️</span>
-                    <span className="text-[10px] text-nfl-pending/80">Partido terminado — picks editables con confirmación</span>
+                    <span className="text-[10px] text-nfl-pending/90">Partido terminado — picks editables con confirmación</span>
                   </div>
                 )}
 
-                {/* Game status badge */}
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                {/* Game status & Venue */}
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] uppercase tracking-wider text-gray-500 truncate max-w-[150px]" title={game.venue || "TBD"}>
                     {game.venue || "TBD"}
                   </span>
                   {isFinished ? (
-                    <span className="text-[10px] uppercase tracking-wider text-gray-500 bg-surface-700/50 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-gray-400 bg-surface-700/60 border border-white/10 px-2 py-0.5 rounded-full">
                       Final
                     </span>
                   ) : game.status === "in_progress" ? (
-                    <span className="text-[10px] uppercase tracking-wider text-nfl-win flex items-center gap-1">
+                    <span className="text-[10px] uppercase tracking-wider text-nfl-win font-semibold flex items-center gap-1">
                       <span className="live-dot" style={{ width: 6, height: 6 }} /> En vivo
                     </span>
                   ) : (
-                    <span className="text-[10px] text-gray-500">
-                      {game.start_time ? new Date(game.start_time).toLocaleDateString("es-MX", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "TBD"}
+                    <span className="text-[10px] uppercase tracking-wider text-accent-blue font-semibold bg-accent-blue/10 px-2 py-0.5 rounded-full border border-accent-blue/20">
+                      Próximo
                     </span>
                   )}
                 </div>
+
+                {/* Date & Time Ago badge */}
+                {dateInfo && (
+                  <div className={`flex items-center justify-between text-[11px] mb-3 px-2.5 py-1.5 rounded-lg border ${
+                    isFinished
+                      ? "bg-surface-800/80 border-white/5 text-gray-400"
+                      : "bg-accent-blue/5 border-accent-blue/10 text-accent-blue/90"
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      <span>🗓️</span>
+                      <span className="font-medium text-gray-300">{dateInfo.fullDate}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-400 font-semibold bg-surface-700/50 px-1.5 py-0.5 rounded">
+                      ⏱️ {dateInfo.timeAgo}
+                    </span>
+                  </div>
+                )}
 
                 {/* Teams */}
                 <div className="space-y-2">
