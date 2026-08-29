@@ -4,7 +4,18 @@
  * Centralised HTTP helpers for the FastAPI backend.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+function getApiBase(): string {
+  if (typeof window !== "undefined") {
+    // When served over HTTPS (e.g. Cloudflare tunnel), avoid mixed-content blocking
+    // by using relative URLs which Next.js rewrites to the backend internally.
+    if (window.location.protocol === "https:" && process.env.NEXT_PUBLIC_API_URL?.startsWith("http:")) {
+      return "";
+    }
+  }
+  return process.env.NEXT_PUBLIC_API_URL || "";
+}
+
+const API_BASE = getApiBase();
 
 /* ── Generic Fetch Wrapper ──────────────────────────────────────────────── */
 
