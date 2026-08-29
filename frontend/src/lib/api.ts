@@ -233,3 +233,101 @@ export interface TeamRoster {
 // Roster
 export const fetchTeamRoster = (teamId: number) =>
   apiFetch<TeamRoster>(`/api/teams/${teamId}/roster`);
+
+
+/* ── Friends Pool Types ────────────────────────────────────────────────────── */
+
+export interface PoolPlayer {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  fav_team_1: Team | null;
+  fav_team_2: Team | null;
+  fav_team_3: Team | null;
+  created_at: string | null;
+}
+
+export interface PoolPlayerCreate {
+  name: string;
+  avatar_url?: string | null;
+  fav_team_1?: number | null;
+  fav_team_2?: number | null;
+  fav_team_3?: number | null;
+}
+
+export interface PoolPick {
+  id: number;
+  player_id: number;
+  game_id: number;
+  picked_team_id: number;
+  picked_team: Team | null;
+  is_correct: boolean | null;
+  created_at: string | null;
+  resolved_at: string | null;
+}
+
+export interface PoolPickCreate {
+  player_id: number;
+  game_id: number;
+  picked_team_id: number;
+}
+
+export interface LeaderboardEntry {
+  player: PoolPlayer;
+  correct_picks: number;
+  total_picks: number;
+  accuracy: number;
+  current_streak: number;
+  longest_streak: number;
+}
+
+/* ── Friends Pool API Functions ────────────────────────────────────────────── */
+
+// Pool Players
+export const fetchPoolPlayers = () =>
+  apiFetch<PoolPlayer[]>("/api/pool/players");
+
+export const fetchPoolPlayer = (id: number) =>
+  apiFetch<PoolPlayer>(`/api/pool/players/${id}`);
+
+export const createPoolPlayer = (data: PoolPlayerCreate) =>
+  apiFetch<PoolPlayer>("/api/pool/players", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const updatePoolPlayer = (id: number, data: Partial<PoolPlayerCreate>) =>
+  apiFetch<PoolPlayer>(`/api/pool/players/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
+export const deletePoolPlayer = (id: number) =>
+  apiFetch<{ detail: string }>(`/api/pool/players/${id}`, { method: "DELETE" });
+
+// Pool Picks
+export const createPoolPicks = (picks: PoolPickCreate[]) =>
+  apiFetch<PoolPick[]>("/api/pool/picks", {
+    method: "POST",
+    body: JSON.stringify({ picks }),
+  });
+
+export const fetchPoolPicks = (params?: Record<string, string>) => {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return apiFetch<PoolPick[]>(`/api/pool/picks${qs}`);
+};
+
+export const deletePoolPick = (id: number) =>
+  apiFetch<{ detail: string }>(`/api/pool/picks/${id}`, { method: "DELETE" });
+
+// Leaderboard
+export const fetchLeaderboard = (params?: Record<string, string>) => {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return apiFetch<LeaderboardEntry[]>(`/api/pool/leaderboard${qs}`);
+};
+
+// Resolve picks
+export const resolvePoolPicks = () =>
+  apiFetch<{ detail: string; resolved_count: number }>("/api/pool/resolve", {
+    method: "POST",
+  });

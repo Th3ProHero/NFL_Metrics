@@ -238,3 +238,62 @@ class TeamRoster(BaseModel):
     season: Optional[int] = None
     groups: list[PositionGroup] = []
     total_players: int = 0
+
+
+# ─── Friends Pool ────────────────────────────────────────────────────────────
+
+class PoolPlayerCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=60)
+    avatar_url: Optional[str] = None
+    fav_team_1: Optional[int] = None
+    fav_team_2: Optional[int] = None
+    fav_team_3: Optional[int] = None
+
+
+class PoolPlayerUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=60)
+    avatar_url: Optional[str] = None
+    fav_team_1: Optional[int] = None
+    fav_team_2: Optional[int] = None
+    fav_team_3: Optional[int] = None
+
+
+class PoolPlayerOut(BaseModel):
+    id: int
+    name: str
+    avatar_url: Optional[str] = None
+    fav_team_1: Optional[TeamOut] = None
+    fav_team_2: Optional[TeamOut] = None
+    fav_team_3: Optional[TeamOut] = None
+    created_at: Optional[datetime] = None
+
+
+class PoolPickCreate(BaseModel):
+    player_id: int
+    game_id: int
+    picked_team_id: int
+
+
+class PoolPickBatchCreate(BaseModel):
+    picks: list[PoolPickCreate]
+
+
+class PoolPickOut(BaseModel):
+    id: int
+    player_id: int
+    game_id: int
+    picked_team_id: int
+    picked_team: Optional[TeamOut] = None
+    is_correct: Optional[bool] = None
+    created_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+
+
+class LeaderboardEntry(BaseModel):
+    player: PoolPlayerOut
+    correct_picks: int = 0
+    total_picks: int = 0
+    accuracy: float = 0.0
+    current_streak: int = 0
+    longest_streak: int = 0
+

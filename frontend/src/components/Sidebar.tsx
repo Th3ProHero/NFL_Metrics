@@ -34,6 +34,13 @@ const IconBook = () => (
   </svg>
 );
 
+const IconTrophy = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <path strokeLinecap="round" strokeLinejoin="round"
+      d="M8 21h8m-4-4v4m-4.5-8.5c-2.5 0-4.5-1-4.5-4V5h4m9 3.5c2.5 0 4.5-1 4.5-4V5h-4M7 5h10a1 1 0 011 1v3c0 3.5-2.5 6-5 6h-2c-2.5 0-5-2.5-5-6V6a1 1 0 011-1z" />
+  </svg>
+);
+
 const IconTeam = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
     <path strokeLinecap="round" strokeLinejoin="round"
@@ -52,11 +59,12 @@ const IconFootball = () => (
 /* ── Navigation Items ────────────────────────────────────────────────────── */
 
 const navItems = [
-  { href: "/live",     label: "Live Games",   icon: IconLive },
-  { href: "/analysis", label: "Analysis",     icon: IconAnalysis },
-  { href: "/teams",    label: "Teams",        icon: IconTeam },
-  { href: "/tracker",  label: "Bet Tracker",  icon: IconTracker },
-  { href: "/guide",    label: "Betting Guide",icon: IconBook },
+  { href: "/live",     label: "Live Games",    icon: IconLive },
+  { href: "/analysis", label: "Analysis",      icon: IconAnalysis },
+  { href: "/teams",    label: "Teams",         icon: IconTeam },
+  { href: "/tracker",  label: "Bet Tracker",   icon: IconTracker },
+  { href: "/pool",     label: "Friends Pool",  icon: IconTrophy },
+  { href: "/guide",    label: "Betting Guide",  icon: IconBook },
 ];
 
 /* ── Sidebar Component ───────────────────────────────────────────────────── */

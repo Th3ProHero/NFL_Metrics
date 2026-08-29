@@ -92,6 +92,34 @@ CREATE TABLE user_bets (
 CREATE INDEX idx_bets_result   ON user_bets(result);
 CREATE INDEX idx_bets_created  ON user_bets(created_at DESC);
 
+-- ─── POOL PLAYERS (friends predictions) ─────────────────────────────────────
+
+CREATE TABLE pool_players (
+    id            SERIAL PRIMARY KEY,
+    name          VARCHAR(60) NOT NULL,
+    avatar_url    TEXT,
+    fav_team_1    INT REFERENCES teams(id),
+    fav_team_2    INT REFERENCES teams(id),
+    fav_team_3    INT REFERENCES teams(id),
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── POOL PICKS ─────────────────────────────────────────────────────────────
+
+CREATE TABLE pool_picks (
+    id              SERIAL PRIMARY KEY,
+    player_id       INT REFERENCES pool_players(id) ON DELETE CASCADE,
+    game_id         INT REFERENCES games(id) ON DELETE CASCADE,
+    picked_team_id  INT REFERENCES teams(id),
+    is_correct      BOOLEAN,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    resolved_at     TIMESTAMPTZ,
+    UNIQUE(player_id, game_id)
+);
+
+CREATE INDEX idx_pool_picks_player ON pool_picks(player_id);
+CREATE INDEX idx_pool_picks_game   ON pool_picks(game_id);
+
 -- ─── SEED: 32 NFL TEAMS ────────────────────────────────────────────────────
 
 INSERT INTO teams (espn_id, abbreviation, name, conference, division, primary_color, logo_url) VALUES

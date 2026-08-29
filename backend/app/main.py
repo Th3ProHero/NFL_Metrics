@@ -31,6 +31,9 @@ from app.models import (
     SimulationRequest, SimulationResult,
     InjuryReport, InjuryAnalysisResult,
     PlayerOut, PositionGroup, TeamRoster,
+    PoolPlayerCreate, PoolPlayerUpdate, PoolPlayerOut,
+    PoolPickCreate, PoolPickBatchCreate, PoolPickOut,
+    LeaderboardEntry,
 )
 from app.etl_live import etl_loop
 from app.etl_odds import start_odds_scheduler, stop_odds_scheduler
@@ -800,3 +803,386 @@ async def get_bet_summary():
         "pending": row["pending"],
         "win_rate": round((wins / decided * 100), 2) if decided > 0 else 0,
     }
+
+
+# =============================================================================
+#  FRIENDS POOL — Players, Picks & Leaderboard
+# =============================================================================
+
+# ─── Helper: build a PoolPlayerOut dict with nested team objects ─────────────
+
+POOL_PLAYER_JOIN_SQL = """
+    SELECT
+        pp.*,
+        t1.id AS t1_id, t1.espn_id AS t1_espn, t1.abbreviation AS t1_abbr,
+        t1.name AS t1_name, t1.conference AS t1_conf, t1.division AS t1_div,
+        t1.logo_url AS t1_logo, t1.primary_color AS t1_color,
+        t2.id AS t2_id, t2.espn_id AS t2_espn, t2.abbreviation AS t2_abbr,
+        t2.name AS t2_name, t2.conference AS t2_conf, t2.division AS t2_div,
+        t2.logo_url AS t2_logo, t2.primary_color AS t2_color,
+        t3.id AS t3_id, t3.espn_id AS t3_espn, t3.abbreviation AS t3_abbr,
+        t3.name AS t3_name, t3.conference AS t3_conf, t3.division AS t3_div,
+        t3.logo_url AS t3_logo, t3.primary_color AS t3_color
+    FROM pool_players pp
+    LEFT JOIN teams t1 ON pp.fav_team_1 = t1.id
+    LEFT JOIN teams t2 ON pp.fav_team_2 = t2.id
+    LEFT JOIN teams t3 ON pp.fav_team_3 = t3.id
+"""
+
+
+def _build_pool_player(row) -> dict:
+    """Convert a joined pool_players row into a PoolPlayerOut-compatible dict."""
+    d = dict(row)
+    result = {
+        "id": d["id"],
+        "name": d["name"],
+        "avatar_url": d.get("avatar_url"),
+        "created_at": d.get("created_at"),
+    }
+    # Nest fav team 1
+    if d.get("t1_id"):
+        result["fav_team_1"] = {
+            "id": d["t1_id"], "espn_id": d["t1_espn"],
+            "abbreviation": d["t1_abbr"], "name": d["t1_name"],
+            "conference": d["t1_conf"], "division": d["t1_div"],
+            "logo_url": d["t1_logo"], "primary_color": d["t1_color"],
+        }
+    if d.get("t2_id"):
+        result["fav_team_2"] = {
+            "id": d["t2_id"], "espn_id": d["t2_espn"],
+            "abbreviation": d["t2_abbr"], "name": d["t2_name"],
+            "conference": d["t2_conf"], "division": d["t2_div"],
+            "logo_url": d["t2_logo"], "primary_color": d["t2_color"],
+        }
+    if d.get("t3_id"):
+        result["fav_team_3"] = {
+            "id": d["t3_id"], "espn_id": d["t3_espn"],
+            "abbreviation": d["t3_abbr"], "name": d["t3_name"],
+            "conference": d["t3_conf"], "division": d["t3_div"],
+            "logo_url": d["t3_logo"], "primary_color": d["t3_color"],
+        }
+    return result
+
+
+# ─── Pool Players CRUD ──────────────────────────────────────────────────────
+
+@app.get("/api/pool/players", response_model=list[PoolPlayerOut], tags=["Friends Pool"])
+async def list_pool_players():
+    """List all friends in the prediction pool."""
+    rows = await fetch(POOL_PLAYER_JOIN_SQL + " ORDER BY pp.name")
+    return [_build_pool_player(r) for r in rows]
+
+
+@app.get("/api/pool/players/{player_id}", response_model=PoolPlayerOut, tags=["Friends Pool"])
+async def get_pool_player(player_id: int):
+    """Get a single pool player by ID."""
+    row = await fetchrow(POOL_PLAYER_JOIN_SQL + " WHERE pp.id = $1", player_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return _build_pool_player(row)
+
+
+@app.post("/api/pool/players", response_model=PoolPlayerOut, status_code=201, tags=["Friends Pool"])
+async def create_pool_player(player: PoolPlayerCreate):
+    """Create a new friend profile in the pool."""
+    row = await fetchrow(
+        """
+        INSERT INTO pool_players (name, avatar_url, fav_team_1, fav_team_2, fav_team_3)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+        """,
+        player.name, player.avatar_url,
+        player.fav_team_1, player.fav_team_2, player.fav_team_3,
+    )
+    return await get_pool_player(row["id"])
+
+
+@app.put("/api/pool/players/{player_id}", response_model=PoolPlayerOut, tags=["Friends Pool"])
+async def update_pool_player(player_id: int, player: PoolPlayerUpdate):
+    """Update a friend's profile."""
+    existing = await fetchrow("SELECT * FROM pool_players WHERE id = $1", player_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    updates = {}
+    if player.name is not None:
+        updates["name"] = player.name
+    if player.avatar_url is not None:
+        updates["avatar_url"] = player.avatar_url
+    if player.fav_team_1 is not None:
+        updates["fav_team_1"] = player.fav_team_1
+    if player.fav_team_2 is not None:
+        updates["fav_team_2"] = player.fav_team_2
+    if player.fav_team_3 is not None:
+        updates["fav_team_3"] = player.fav_team_3
+
+    if not updates:
+        return await get_pool_player(player_id)
+
+    set_clauses = []
+    params = []
+    for i, (col, val) in enumerate(updates.items(), start=1):
+        set_clauses.append(f"{col} = ${i}")
+        params.append(val)
+    params.append(player_id)
+    query = f"UPDATE pool_players SET {', '.join(set_clauses)} WHERE id = ${len(params)}"
+    await execute(query, *params)
+    return await get_pool_player(player_id)
+
+
+@app.delete("/api/pool/players/{player_id}", tags=["Friends Pool"])
+async def delete_pool_player(player_id: int):
+    """Delete a friend from the pool (cascades to their picks)."""
+    result = await execute("DELETE FROM pool_players WHERE id = $1", player_id)
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="Player not found")
+    return {"detail": "Player deleted", "id": player_id}
+
+
+# ─── Pool Picks ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pool/picks", response_model=list[PoolPickOut], status_code=201, tags=["Friends Pool"])
+async def create_pool_picks(batch: PoolPickBatchCreate):
+    """Register one or more game predictions. Uses upsert to allow changing picks."""
+    created = []
+    for pick in batch.picks:
+        row = await fetchrow(
+            """
+            INSERT INTO pool_picks (player_id, game_id, picked_team_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (player_id, game_id)
+            DO UPDATE SET picked_team_id = EXCLUDED.picked_team_id,
+                          is_correct = NULL,
+                          resolved_at = NULL
+            RETURNING *
+            """,
+            pick.player_id, pick.game_id, pick.picked_team_id,
+        )
+        # Attach picked team info
+        team_row = await fetchrow("SELECT * FROM teams WHERE id = $1", pick.picked_team_id)
+        d = dict(row)
+        if team_row:
+            d["picked_team"] = dict(team_row)
+        created.append(d)
+    return created
+
+
+@app.get("/api/pool/picks", response_model=list[PoolPickOut], tags=["Friends Pool"])
+async def list_pool_picks(
+    player_id: int | None = None,
+    game_id: int | None = None,
+    season: int | None = None,
+    week: int | None = None,
+):
+    """List picks with optional filters."""
+    query = """
+        SELECT pk.*, t.id AS t_id, t.espn_id AS t_espn, t.abbreviation AS t_abbr,
+               t.name AS t_name, t.conference AS t_conf, t.division AS t_div,
+               t.logo_url AS t_logo, t.primary_color AS t_color
+        FROM pool_picks pk
+        LEFT JOIN teams t ON pk.picked_team_id = t.id
+        LEFT JOIN games g ON pk.game_id = g.id
+        WHERE 1=1
+    """
+    params = []
+    idx = 1
+    if player_id is not None:
+        query += f" AND pk.player_id = ${idx}"
+        params.append(player_id)
+        idx += 1
+    if game_id is not None:
+        query += f" AND pk.game_id = ${idx}"
+        params.append(game_id)
+        idx += 1
+    if season is not None:
+        query += f" AND g.season = ${idx}"
+        params.append(season)
+        idx += 1
+    if week is not None:
+        query += f" AND g.week = ${idx}"
+        params.append(week)
+        idx += 1
+    query += " ORDER BY pk.created_at DESC"
+    rows = await fetch(query, *params)
+
+    results = []
+    for r in rows:
+        d = dict(r)
+        if d.get("t_id"):
+            d["picked_team"] = {
+                "id": d.pop("t_id"), "espn_id": d.pop("t_espn"),
+                "abbreviation": d.pop("t_abbr"), "name": d.pop("t_name"),
+                "conference": d.pop("t_conf"), "division": d.pop("t_div"),
+                "logo_url": d.pop("t_logo"), "primary_color": d.pop("t_color"),
+            }
+        results.append(d)
+    return results
+
+
+@app.delete("/api/pool/picks/{pick_id}", tags=["Friends Pool"])
+async def delete_pool_pick(pick_id: int):
+    """Delete a prediction."""
+    result = await execute("DELETE FROM pool_picks WHERE id = $1", pick_id)
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="Pick not found")
+    return {"detail": "Pick deleted", "id": pick_id}
+
+
+# ─── Resolve Picks ──────────────────────────────────────────────────────────
+
+async def resolve_picks_for_game(game_id: int) -> int:
+    """
+    Resolve all pending picks for a finished game.
+    Returns the number of picks resolved.
+    """
+    game = await fetchrow("SELECT * FROM games WHERE id = $1 AND status = 'post'", game_id)
+    if not game:
+        return 0
+
+    # Determine winner
+    if game["home_score"] > game["away_score"]:
+        winner_id = game["home_team_id"]
+    elif game["away_score"] > game["home_score"]:
+        winner_id = game["away_team_id"]
+    else:
+        # Tie — mark all as incorrect (NFL regular season can tie)
+        winner_id = None
+
+    if winner_id is not None:
+        result = await execute(
+            """
+            UPDATE pool_picks
+            SET is_correct = (picked_team_id = $1),
+                resolved_at = NOW()
+            WHERE game_id = $2 AND is_correct IS NULL
+            """,
+            winner_id, game_id,
+        )
+    else:
+        # Tie — no one wins
+        result = await execute(
+            """
+            UPDATE pool_picks
+            SET is_correct = FALSE,
+                resolved_at = NOW()
+            WHERE game_id = $1 AND is_correct IS NULL
+            """,
+            game_id,
+        )
+    # Extract count from "UPDATE N"
+    try:
+        return int(result.split()[-1])
+    except (ValueError, IndexError):
+        return 0
+
+
+@app.post("/api/pool/resolve", tags=["Friends Pool"])
+async def manual_resolve_picks():
+    """
+    Manually resolve all pending picks for finished games.
+    This is also called automatically by the ETL worker.
+    """
+    finished_games = await fetch(
+        """
+        SELECT DISTINCT g.id
+        FROM games g
+        INNER JOIN pool_picks pk ON pk.game_id = g.id
+        WHERE g.status = 'post' AND pk.is_correct IS NULL
+        """
+    )
+    total_resolved = 0
+    for row in finished_games:
+        total_resolved += await resolve_picks_for_game(row["id"])
+
+    return {
+        "detail": f"Resolved {total_resolved} picks across {len(finished_games)} games",
+        "resolved_count": total_resolved,
+        "games_processed": len(finished_games),
+    }
+
+
+# ─── Leaderboard ────────────────────────────────────────────────────────────
+
+@app.get("/api/pool/leaderboard", response_model=list[LeaderboardEntry], tags=["Friends Pool"])
+async def get_leaderboard(
+    season: int | None = None,
+    week: int | None = None,
+):
+    """
+    Get the prediction leaderboard, ranked by correct picks.
+    Optionally filter by season and/or week.
+    """
+    # Get all players
+    player_rows = await fetch(POOL_PLAYER_JOIN_SQL + " ORDER BY pp.name")
+    players = [_build_pool_player(r) for r in player_rows]
+
+    leaderboard = []
+    for player in players:
+        # Build pick stats query with optional filters
+        stats_query = """
+            SELECT
+                COUNT(*) AS total_picks,
+                COUNT(*) FILTER (WHERE pk.is_correct = TRUE) AS correct_picks
+            FROM pool_picks pk
+            LEFT JOIN games g ON pk.game_id = g.id
+            WHERE pk.player_id = $1
+        """
+        params = [player["id"]]
+        idx = 2
+        if season is not None:
+            stats_query += f" AND g.season = ${idx}"
+            params.append(season)
+            idx += 1
+        if week is not None:
+            stats_query += f" AND g.week = ${idx}"
+            params.append(week)
+            idx += 1
+
+        stats = await fetchrow(stats_query, *params)
+        total = stats["total_picks"] if stats else 0
+        correct = stats["correct_picks"] if stats else 0
+
+        # Calculate current streak (consecutive correct picks)
+        streak_query = """
+            SELECT pk.is_correct
+            FROM pool_picks pk
+            LEFT JOIN games g ON pk.game_id = g.id
+            WHERE pk.player_id = $1 AND pk.is_correct IS NOT NULL
+            ORDER BY g.start_time DESC
+        """
+        streak_rows = await fetch(streak_query, player["id"])
+        current_streak = 0
+        longest_streak = 0
+        running = 0
+        for sr in streak_rows:
+            if sr["is_correct"]:
+                if running >= 0:
+                    running += 1
+                else:
+                    running = 1
+            else:
+                if running > 0:
+                    running = -1
+                else:
+                    running -= 1
+            if running > 0 and running > longest_streak:
+                longest_streak = running
+        # Current streak = how many recent correct in a row
+        for sr in streak_rows:
+            if sr["is_correct"]:
+                current_streak += 1
+            else:
+                break
+
+        leaderboard.append({
+            "player": player,
+            "correct_picks": correct,
+            "total_picks": total,
+            "accuracy": round((correct / total * 100), 1) if total > 0 else 0.0,
+            "current_streak": current_streak,
+            "longest_streak": longest_streak,
+        })
+
+    # Sort by correct picks desc, then accuracy desc
+    leaderboard.sort(key=lambda x: (x["correct_picks"], x["accuracy"]), reverse=True)
+    return leaderboard

@@ -245,12 +245,70 @@ async def poll_espn_scoreboard() -> bool:
 POLL_LIVE_INTERVAL = 15         # seconds when games are live
 POLL_IDLE_INTERVAL = 4 * 3600   # 4 hours when no live games
 
+async def _resolve_pool_picks() -> None:
+    """Resolve any pending pool picks for games that have finished."""
+    try:
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            # Find finished games with unresolved picks
+            rows = await conn.fetch("""
+                SELECT DISTINCT g.id, g.home_team_id, g.away_team_id,
+                       g.home_score, g.away_score
+                FROM games g
+                INNER JOIN pool_picks pk ON pk.game_id = g.id
+                WHERE g.status = 'post' AND pk.is_correct IS NULL
+            """)
+            if not rows:
+                return
+
+            total = 0
+            for row in rows:
+                if row["home_score"] > row["away_score"]:
+                    winner_id = row["home_team_id"]
+                elif row["away_score"] > row["home_score"]:
+                    winner_id = row["away_team_id"]
+                else:
+                    winner_id = None  # tie
+
+                if winner_id is not None:
+                    result = await conn.execute(
+                        """
+                        UPDATE pool_picks
+                        SET is_correct = (picked_team_id = $1), resolved_at = NOW()
+                        WHERE game_id = $2 AND is_correct IS NULL
+                        """,
+                        winner_id, row["id"],
+                    )
+                else:
+                    result = await conn.execute(
+                        """
+                        UPDATE pool_picks
+                        SET is_correct = FALSE, resolved_at = NOW()
+                        WHERE game_id = $1 AND is_correct IS NULL
+                        """,
+                        row["id"],
+                    )
+                try:
+                    total += int(result.split()[-1])
+                except (ValueError, IndexError):
+                    pass
+
+            if total > 0:
+                logger.info("Auto-resolved %d pool picks across %d games", total, len(rows))
+    except Exception:
+        logger.exception("Error auto-resolving pool picks")
+
+
 async def etl_loop() -> None:
     """Run the adaptive polling loop forever."""
     logger.info("ETL Live loop started")
     while True:
         try:
             has_live = await poll_espn_scoreboard()
+
+            # Auto-resolve pool picks for finished games
+            await _resolve_pool_picks()
+
             interval = POLL_LIVE_INTERVAL if has_live else POLL_IDLE_INTERVAL
             label = "15s (live)" if has_live else "4h (idle)"
             logger.info("Next poll in %s", label)
@@ -261,3 +319,4 @@ async def etl_loop() -> None:
         except Exception:
             logger.exception("Unexpected error in ETL loop; retrying in 30s")
             await asyncio.sleep(30)
+
